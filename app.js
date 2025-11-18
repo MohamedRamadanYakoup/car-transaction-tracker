@@ -1,0 +1,394 @@
+const { useState, useEffect } = React;
+const { Plus, Trash2, Download } = lucide;
+
+// Create a mock storage API for the standalone version
+if (typeof window.storage === 'undefined') {
+  window.storage = {
+    get: async (key) => {
+      const value = localStorage.getItem(key);
+      return value ? { key, value, shared: false } : null;
+    },
+    set: async (key, value) => {
+      localStorage.setItem(key, value);
+      return { key, value, shared: false };
+    },
+    delete: async (key) => {
+      localStorage.removeItem(key);
+      return { key, deleted: true, shared: false };
+    }
+  };
+}
+
+function CarTransactionTracker() {
+  const [activeTab, setActiveTab] = useState('entry');
+  const [formData, setFormData] = useState({
+    purchaseDate: '',
+    saleDate: '',
+    carDescription: '',
+    vinNumber: '',
+    vendor: '',
+    item: '',
+    amount: '',
+    transactionDate: ''
+  });
+  const [dataEntries, setDataEntries] = useState([]);
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const loadData = async () => {
+    try {
+      const result = await window.storage.get('car-transactions');
+      if (result && result.value) {
+        setDataEntries(JSON.parse(result.value));
+      }
+    } catch (error) {
+      console.log('No existing data found');
+    }
+  };
+
+  const saveData = async (entries) => {
+    try {
+      await window.storage.set('car-transactions', JSON.stringify(entries));
+    } catch (error) {
+      console.error('Error saving data:', error);
+    }
+  };
+
+  const handleInputChange = (e) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({
+      ...prev,
+      [name]: value
+    }));
+  };
+
+  const handleAddEntry = () => {
+    if (!formData.purchaseDate && !formData.saleDate && !formData.carDescription && 
+        !formData.vinNumber && !formData.vendor && !formData.item && !formData.amount && !formData.transactionDate) {
+      alert('Please fill in at least one field');
+      return;
+    }
+
+    const newEntry = {
+      id: Date.now(),
+      ...formData
+    };
+
+    const updatedEntries = [...dataEntries, newEntry];
+    setDataEntries(updatedEntries);
+    saveData(updatedEntries);
+
+    setFormData({
+      purchaseDate: '',
+      saleDate: '',
+      carDescription: '',
+      vinNumber: '',
+      vendor: '',
+      item: '',
+      amount: '',
+      transactionDate: ''
+    });
+
+    setActiveTab('data');
+  };
+
+  const handleDeleteEntry = (id) => {
+    const updatedEntries = dataEntries.filter(entry => entry.id !== id);
+    setDataEntries(updatedEntries);
+    saveData(updatedEntries);
+  };
+
+  const exportToExcel = () => {
+    if (dataEntries.length === 0) {
+      alert('No data to export');
+      return;
+    }
+
+    const headers = ['Purchase Date', 'Sale Date', 'Car Description', 'VIN Number', 'Vendor', 'Item', 'Amount', 'Transaction Date'];
+    const csvContent = [
+      headers.join(','),
+      ...dataEntries.map(entry => [
+        entry.purchaseDate || '',
+        entry.saleDate || '',
+        `"${(entry.carDescription || '').replace(/"/g, '""')}"`,
+        entry.vinNumber || '',
+        `"${(entry.vendor || '').replace(/"/g, '""')}"`,
+        `"${(entry.item || '').replace(/"/g, '""')}"`,
+        entry.amount || '',
+        entry.transactionDate || ''
+      ].join(','))
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    
+    link.setAttribute('href', url);
+    link.setAttribute('download', `car_transactions_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  return (
+    <div className="w-full h-screen bg-gray-50 flex flex-col">
+      <div className="bg-white border-b border-gray-200 flex">
+        <button
+          onClick={() => setActiveTab('entry')}
+          className={`px-6 py-3 font-medium border-b-2 transition-colors ${
+            activeTab === 'entry'
+              ? 'border-blue-500 text-blue-600'
+              : 'border-transparent text-gray-600 hover:text-gray-800'
+          }`}
+        >
+          Data Entry
+        </button>
+        <button
+          onClick={() => setActiveTab('data')}
+          className={`px-6 py-3 font-medium border-b-2 transition-colors ${
+            activeTab === 'data'
+              ? 'border-blue-500 text-blue-600'
+              : 'border-transparent text-gray-600 hover:text-gray-800'
+          }`}
+        >
+          Data Table ({dataEntries.length})
+        </button>
+      </div>
+
+      <div className="flex-1 overflow-auto p-6">
+        {activeTab === 'entry' ? (
+          <div className="max-w-3xl mx-auto bg-white rounded-lg shadow-sm p-8">
+            <h2 className="text-2xl font-bold text-gray-800 mb-6">Enter Transaction Data</h2>
+            
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Purchase Date
+                  </label>
+                  <input
+                    type="date"
+                    name="purchaseDate"
+                    value={formData.purchaseDate}
+                    onChange={handleInputChange}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Sale Date
+                  </label>
+                  <input
+                    type="date"
+                    name="saleDate"
+                    value={formData.saleDate}
+                    onChange={handleInputChange}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Car Description
+                </label>
+                <input
+                  type="text"
+                  name="carDescription"
+                  value={formData.carDescription}
+                  onChange={handleInputChange}
+                  placeholder="e.g., 2020 Toyota Camry - Black"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  VIN Number
+                </label>
+                <input
+                  type="text"
+                  name="vinNumber"
+                  value={formData.vinNumber}
+                  onChange={handleInputChange}
+                  placeholder="e.g., 1HGBH41JXMN109186"
+                  maxLength="17"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent uppercase"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Vendor
+                </label>
+                <input
+                  type="text"
+                  name="vendor"
+                  value={formData.vendor}
+                  onChange={handleInputChange}
+                  placeholder="e.g., ABC Auto Sales"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Item
+                </label>
+                <input
+                  type="text"
+                  name="item"
+                  value={formData.item}
+                  onChange={handleInputChange}
+                  placeholder="e.g., Vehicle, Parts, Service"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Amount
+                </label>
+                <input
+                  type="number"
+                  name="amount"
+                  value={formData.amount}
+                  onChange={handleInputChange}
+                  placeholder="e.g., 15000"
+                  step="0.01"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Transaction Date
+                </label>
+                <input
+                  type="date"
+                  name="transactionDate"
+                  value={formData.transactionDate}
+                  onChange={handleInputChange}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+            </div>
+
+            <button
+              onClick={handleAddEntry}
+              className="mt-6 w-full bg-blue-600 text-white py-3 rounded-md font-medium hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
+            >
+              <Plus size={20} />
+              Add Entry to Data Table
+            </button>
+          </div>
+        ) : (
+          <div className="bg-white rounded-lg shadow-sm overflow-hidden">
+            <div className="p-6 border-b border-gray-200 flex justify-between items-center">
+              <div>
+                <h2 className="text-2xl font-bold text-gray-800">Transaction Data</h2>
+                <p className="text-sm text-gray-600 mt-1">Total Entries: {dataEntries.length}</p>
+              </div>
+              <button
+                onClick={exportToExcel}
+                className="bg-green-600 text-white px-4 py-2 rounded-md font-medium hover:bg-green-700 transition-colors flex items-center gap-2"
+                disabled={dataEntries.length === 0}
+              >
+                <Download size={20} />
+                Export to Excel
+              </button>
+            </div>
+            
+            {dataEntries.length === 0 ? (
+              <div className="p-12 text-center text-gray-500">
+                No entries yet. Go to the Data Entry tab to add transactions.
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-gray-50 border-b border-gray-200">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
+                        Purchase Date
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
+                        Sale Date
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
+                        Car Description
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
+                        VIN Number
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
+                        Vendor
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
+                        Item
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
+                        Amount
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
+                        Transaction Date
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
+                        Action
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {dataEntries.map((entry) => (
+                      <tr key={entry.id} className="hover:bg-gray-50">
+                        <td className="px-4 py-3 text-sm text-gray-900">
+                          {entry.purchaseDate || '-'}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-900">
+                          {entry.saleDate || '-'}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-900">
+                          {entry.carDescription || '-'}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-900 font-mono">
+                          {entry.vinNumber || '-'}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-900">
+                          {entry.vendor || '-'}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-900">
+                          {entry.item || '-'}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-900">
+                          {entry.amount ? `$${parseFloat(entry.amount).toFixed(2)}` : '-'}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-900">
+                          {entry.transactionDate || '-'}
+                        </td>
+                        <td className="px-4 py-3 text-sm">
+                          <button
+                            onClick={() => handleDeleteEntry(entry.id)}
+                            className="text-red-600 hover:text-red-800 transition-colors"
+                            title="Delete entry"
+                          >
+                            <Trash2 size={18} />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.render(<CarTransactionTracker />, document.getElementById('root'));
