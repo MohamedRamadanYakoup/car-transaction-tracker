@@ -12,6 +12,7 @@
     <!-- Firebase -->
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
     
     <style>
         body {
@@ -46,6 +47,7 @@
           firebase.initializeApp(firebaseConfig);
         }
         const database = firebase.database();
+        const auth = firebase.auth();
 
         // Simple icon components
         const Plus = () => (
@@ -80,7 +82,111 @@
           </svg>
         );
 
+        const LogOut = () => (
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+            <polyline points="16 17 21 12 16 7"></polyline>
+            <line x1="21" y1="12" x2="9" y2="12"></line>
+          </svg>
+        );
+
+        function LoginScreen({ onLogin }) {
+          const [email, setEmail] = useState('');
+          const [password, setPassword] = useState('');
+          const [isSignUp, setIsSignUp] = useState(false);
+          const [loading, setLoading] = useState(false);
+          const [error, setError] = useState('');
+
+          const handleSubmit = async (e) => {
+            e.preventDefault();
+            setError('');
+            setLoading(true);
+
+            try {
+              if (isSignUp) {
+                await auth.createUserWithEmailAndPassword(email, password);
+              } else {
+                await auth.signInWithEmailAndPassword(email, password);
+              }
+              onLogin();
+            } catch (err) {
+              setError(err.message);
+            }
+            setLoading(false);
+          };
+
+          return (
+            <div className="w-full h-screen bg-gray-50 flex items-center justify-center">
+              <div className="max-w-md w-full mx-4">
+                <div className="bg-white rounded-lg shadow-lg p-8">
+                  <h1 className="text-3xl font-bold text-gray-800 mb-2 text-center">
+                    Car Transaction Tracker
+                  </h1>
+                  <p className="text-gray-600 mb-6 text-center">
+                    {isSignUp ? 'Create your account' : 'Sign in to continue'}
+                  </p>
+
+                  {error && (
+                    <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded mb-4">
+                      {error}
+                    </div>
+                  )}
+
+                  <form onSubmit={handleSubmit} className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Email
+                      </label>
+                      <input
+                        type="email"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        required
+                        placeholder="your@email.com"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Password
+                      </label>
+                      <input
+                        type="password"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        required
+                        minLength="6"
+                        placeholder="••••••••"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      />
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={loading}
+                      className="w-full bg-blue-600 text-white py-3 rounded-md font-medium hover:bg-blue-700 transition-colors disabled:opacity-50"
+                    >
+                      {loading ? 'Please wait...' : (isSignUp ? 'Sign Up' : 'Sign In')}
+                    </button>
+                  </form>
+
+                  <div className="mt-4 text-center">
+                    <button
+                      onClick={() => setIsSignUp(!isSignUp)}
+                      className="text-blue-600 hover:text-blue-700 text-sm"
+                    >
+                      {isSignUp ? 'Already have an account? Sign in' : "Don't have an account? Sign up"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        }
+
         function CarTransactionTracker() {
+          const [user, setUser] = useState(null);
           const [activeTab, setActiveTab] = useState('entry');
           const [formData, setFormData] = useState({
             purchaseDate: '',
@@ -97,8 +203,21 @@
           const [syncing, setSyncing] = useState(false);
 
           useEffect(() => {
-            loadData();
-            
+            const unsubscribe = auth.onAuthStateChanged((user) => {
+              setUser(user);
+              if (user) {
+                loadData();
+              } else {
+                setLoading(false);
+              }
+            });
+
+            return () => unsubscribe();
+          }, []);
+
+          useEffect(() => {
+            if (!user) return;
+
             // Real-time listener for data changes
             const entriesRef = database.ref('transactions');
             entriesRef.on('value', (snapshot) => {
@@ -116,7 +235,7 @@
             });
 
             return () => entriesRef.off();
-          }, []);
+          }, [user]);
 
           const loadData = async () => {
             try {
@@ -133,6 +252,14 @@
             } catch (error) {
               console.error('Error loading data:', error);
               setLoading(false);
+            }
+          };
+
+          const handleLogout = async () => {
+            try {
+              await auth.signOut();
+            } catch (error) {
+              console.error('Error signing out:', error);
             }
           };
 
@@ -156,7 +283,8 @@
               const newEntryRef = database.ref('transactions').push();
               await newEntryRef.set({
                 ...formData,
-                createdAt: Date.now()
+                createdAt: Date.now(),
+                createdBy: user.email
               });
 
               setFormData({
@@ -225,6 +353,10 @@
             document.body.removeChild(link);
           };
 
+          if (!user) {
+            return <LoginScreen onLogin={() => setUser(auth.currentUser)} />;
+          }
+
           if (loading) {
             return (
               <div className="w-full h-screen bg-gray-50 flex items-center justify-center">
@@ -261,12 +393,24 @@
                     Data Table ({dataEntries.length})
                   </button>
                 </div>
-                {syncing && (
-                  <div className="px-6 py-3 flex items-center gap-2 text-sm text-blue-600">
-                    <RefreshCw className="animate-spin" />
-                    Syncing...
+                <div className="flex items-center gap-4 px-6">
+                  {syncing && (
+                    <div className="flex items-center gap-2 text-sm text-blue-600">
+                      <RefreshCw className="animate-spin" />
+                      Syncing...
+                    </div>
+                  )}
+                  <div className="text-sm text-gray-600">
+                    {user.email}
                   </div>
-                )}
+                  <button
+                    onClick={handleLogout}
+                    className="text-gray-600 hover:text-gray-800 transition-colors flex items-center gap-2"
+                    title="Sign out"
+                  >
+                    <LogOut />
+                  </button>
+                </div>
               </div>
 
               <div className="flex-1 overflow-auto p-6">
